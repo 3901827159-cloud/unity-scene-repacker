@@ -28,25 +28,15 @@ jobs:
           echo "[target.armv7-linux-androideabi]" > ~/.cargo/config.toml
           echo 'linker = "'$NDK_HOME'/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"' >> ~/.cargo/config.toml
 
-      - name: Vendor dependencies
-        run: cargo vendor vendor/
+      - name: Fetch dependencies (including git)
+        run: cargo fetch
 
       - name: Patch typetree-generator-api for 32-bit
         run: |
-          find vendor -path "*/typetree-generator-api-*/src/lib.rs" | head -1 | xargs -I {} sed -i 's/const _: () = assert!(std::mem::size_of::<TypeTreeNodeNative>() - 24 == 0);/const _: () = assert!(std::mem::size_of::<TypeTreeNodeNative>() == 16);/' {}
-          find vendor -path "*/typetree-generator-api-*/src/*.rs" -exec sed -i 's/size_of::<TypeTreeNodeNative>() - 24/size_of::<TypeTreeNodeNative>() - 16/g' {} \;
-
-      - name: Configure vendored sources
-        run: |
-          mkdir -p .cargo
-          cat > .cargo/config.toml << 'EOF'
-          [source.crates-io]
-          replace-with = "vendored-sources"
-          [source.vendored-sources]
-          directory = "vendor"
-          [target.armv7-linux-androideabi]
-          linker = "${{ env.ANDROID_NDK_HOME }}/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"
-          EOF
+          # Patch git checkout directory
+          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs -I {} sed -i 's/size_of::<TypeTreeNodeNative>() - 24usize/size_of::<TypeTreeNodeNative>() - 16usize/g' {}
+          # Verify patch
+          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs grep -n "TypeTreeNodeNative"
 
       - name: Build bindings crate
         run: cargo build -p bindings --target armv7-linux-androideabi --release
