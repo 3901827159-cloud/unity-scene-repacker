@@ -28,20 +28,34 @@ jobs:
           echo "[target.armv7-linux-androideabi]" > ~/.cargo/config.toml
           echo 'linker = "'$NDK_HOME'/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi21-clang"' >> ~/.cargo/config.toml
 
-      - name: Fetch dependencies (including git)
+      - name: Fetch dependencies
         run: cargo fetch
 
-      - name: Patch typetree-generator-api for 32-bit
+      - name: Patch typetree-generator-api (delete full assertion lines)
         run: |
           GEN_FILE=$(find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1)
           echo "Patching: $GEN_FILE"
-          # Delete ALL bindgen compile-time assertions
-          # Pattern: ["description"][::std::mem::xxx - Nusize];
-          sed -i '/\[\s*\".*\"\s*\]\[\s*::std::mem::.*\s*-.*usize\s*\]/d' "$GEN_FILE"
-          # Also catch variants without quotes
-          sed -i '/\[::std::mem::.*-.*usize\]/d' "$GEN_FILE"
+          # Delete FULL lines: ["desc"][::std::mem::xxx - Nusize];
+          sed -i '/\["[^"]*"\]\[::std::mem::.*- [0-9]*usize\];/d' "$GEN_FILE"
+          # Also delete lines without description prefix
+          sed -i '/\[::std::mem::.*- [0-9]*usize\]/d' "$GEN_FILE"
           echo "Remaining assertions:"
-          grep -c "::std::mem::" "$GEN_FILE" || echo "0 remaining"
+          grep -c "::std::mem::" "$GEN_FILE" || echo "0"
+
+      - name: Patch dotnetdll u64 -> usize for 32-bit
+        run: |
+          TABLE_RS=$(find ~/.cargo/registry/src -path "*/dotnetdll-*/src/binary/metadata/table.rs" | head -1)
+          HEADER_RS=$(find ~/.cargo/registry/src -path "*/dotnetdll-*/src/binary/metadata/header.rs" | head -1)
+          
+          if [ -n "$TABLE_RS" ]; then
+            echo "Patching table.rs"
+            sed -i 's/let slice = mask.view_bits_mut::<Lsb0>();/let slice = (mask as usize).view_bits_mut::<Lsb0>();/g' "$TABLE_RS"
+          fi
+          
+          if [ -n "$HEADER_RS" ]; then
+            echo "Patching header.rs"
+            sed -i 's/valid.view_bits::<Lsb0>()/(valid as usize).view_bits::<Lsb0>()/g' "$HEADER_RS"
+          fi
 
       - name: Build bindings crate
         run: cargo build -p bindings --target armv7-linux-androideabi --release
