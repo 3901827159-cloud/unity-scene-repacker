@@ -46,6 +46,26 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26d
+name: Build Android ARMv7 .so (Fixed)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-armv7:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup --version
+          rustup target add armv7-linux-androideabi
+
+      - name: Install Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26d
           link-to-sdk: true
 
       - name: Configure Cargo
@@ -72,9 +92,7 @@ jobs:
               with open(path, 'r') as f:
                   content = f.read()
               orig_len = len(content)
-              # Delete entire const _: () = { ... }; blocks (non-greedy match inside braces)
               content = re.sub(r'const\s+_\s*:\s*\(\)\s*=\s*\{[^{}]*\};', '', content, flags=re.DOTALL)
-              # Also delete any leftover ::std::mem:: lines and pure description lines
               lines = content.split('\n')
               result = []
               for line in lines:
@@ -97,25 +115,21 @@ jobs:
               with open(path, 'r') as f:
                   content = f.read()
 
-              # valid_mask: change let mut mask = 0; -> let mut mask = 0usize;
               content = re.sub(
                   r'(pub fn valid_mask\(&self\) -> u64 \{)\s*let mut mask = 0;',
                   r'\1\n        let mut mask = 0usize;',
                   content
               )
-              # sorted_mask: same
               content = re.sub(
                   r'(pub fn sorted_mask\(\) -> u64 \{)\s*let mut mask = 0;',
                   r'\1\n        let mut mask = 0usize;',
                   content
               )
-              # valid_mask: change trailing "mask" return to "mask as u64"
               content = re.sub(
                   r'(pub fn valid_mask\(&self\) -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
                   r'\1\n\2mask as u64\n\3}',
                   content
               )
-              # sorted_mask: same
               content = re.sub(
                   r'(pub fn sorted_mask\(\) -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
                   r'\1\n\2mask as u64\n\3}',
