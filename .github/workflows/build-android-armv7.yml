@@ -33,9 +33,11 @@ jobs:
 
       - name: Patch typetree-generator-api for 32-bit
         run: |
-          # Patch git checkout directory
+          # Patch size assertion: 24 -> 16
           find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs -I {} sed -i 's/size_of::<TypeTreeNodeNative>() - 24usize/size_of::<TypeTreeNodeNative>() - 16usize/g' {}
-          # Verify patch
+          # Patch align assertion: 8 -> 4
+          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs -I {} sed -i 's/align_of::<TypeTreeNodeNative>() - 8usize/align_of::<TypeTreeNodeNative>() - 4usize/g' {}
+          # Verify
           find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs grep -n "TypeTreeNodeNative"
 
       - name: Build bindings crate
@@ -46,3 +48,4 @@ jobs:
         with:
           name: libunityscenerepacker-armv7
           path: target/armv7-linux-androideabi/release/libunityscenerepacker.so
+
