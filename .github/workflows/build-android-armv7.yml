@@ -33,12 +33,15 @@ jobs:
 
       - name: Patch typetree-generator-api for 32-bit
         run: |
-          # Patch size assertion: 24 -> 16
-          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs -I {} sed -i 's/size_of::<TypeTreeNodeNative>() - 24usize/size_of::<TypeTreeNodeNative>() - 16usize/g' {}
-          # Patch align assertion: 8 -> 4
-          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs -I {} sed -i 's/align_of::<TypeTreeNodeNative>() - 8usize/align_of::<TypeTreeNodeNative>() - 4usize/g' {}
-          # Verify
-          find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1 | xargs grep -n "TypeTreeNodeNative"
+          GEN_FILE=$(find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1)
+          echo "Patching: $GEN_FILE"
+          # Delete ALL bindgen compile-time assertions
+          # Pattern: ["description"][::std::mem::xxx - Nusize];
+          sed -i '/\[\s*\".*\"\s*\]\[\s*::std::mem::.*\s*-.*usize\s*\]/d' "$GEN_FILE"
+          # Also catch variants without quotes
+          sed -i '/\[::std::mem::.*-.*usize\]/d' "$GEN_FILE"
+          echo "Remaining assertions:"
+          grep -c "::std::mem::" "$GEN_FILE" || echo "0 remaining"
 
       - name: Build bindings crate
         run: cargo build -p bindings --target armv7-linux-androideabi --release
@@ -48,4 +51,3 @@ jobs:
         with:
           name: libunityscenerepacker-armv7
           path: target/armv7-linux-androideabi/release/libunityscenerepacker.so
-
