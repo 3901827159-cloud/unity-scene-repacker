@@ -34,17 +34,25 @@ jobs:
       - name: Patch ALL for 32-bit ARM
         run: |
           python3 << 'PYEOF'
-          import os, glob, re
+          import os, re
+
+          # ===== Helper: find file under path containing keyword =====
+          def find_file(base, keyword, filename):
+              for root, dirs, files in os.walk(os.path.expanduser(base)):
+                  if keyword in root and filename in files:
+                      return os.path.join(root, filename)
+              return None
 
           # ===== 1. typetree-generator-api: DELETE all const assertion blocks =====
-          for path in glob.glob(os.path.expanduser(
-              "~/.cargo/git/checkouts/typetree-generator-api-bindings-*/src/generated.rs"
-          )):
+          path = find_file("~/.cargo/git/checkouts", "typetree-generator-api", "generated.rs")
+          if path:
               print(f"[1] Cleaning {path}")
               with open(path, 'r') as f:
                   content = f.read()
               orig_len = len(content)
+              # Delete entire const _: () = { ... }; blocks
               content = re.sub(r'const\s+_\s*:\s*\(\)\s*=\s*\{[^{}]*\};', '', content, flags=re.DOTALL)
+              # Delete any leftover ::std::mem:: lines and pure description lines
               lines = content.split('\n')
               result = []
               for line in lines:
@@ -58,11 +66,12 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print(f"    {orig_len} -> {len(content)} chars")
+          else:
+              print("[!] WARNING: generated.rs not found!")
 
           # ===== 2. dotnetdll table.rs: u64 mask -> usize internally =====
-          for path in glob.glob(os.path.expanduser(
-              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/table.rs"
-          )):
+          path = find_file("~/.cargo/registry/src", "dotnetdll", "table.rs")
+          if path:
               print(f"[2] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
@@ -91,11 +100,12 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print("    table.rs patched")
+          else:
+              print("[!] WARNING: table.rs not found!")
 
           # ===== 3. dotnetdll header.rs: valid.view_bits -> usize binding =====
-          for path in glob.glob(os.path.expanduser(
-              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/header.rs"
-          )):
+          path = find_file("~/.cargo/registry/src", "dotnetdll", "header.rs")
+          if path:
               print(f"[3] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
@@ -108,6 +118,8 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print("    header.rs patched")
+          else:
+              print("[!] WARNING: header.rs not found!")
 
           print("[+] All patches applied")
           PYEOF
