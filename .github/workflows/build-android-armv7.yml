@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Patched)
+name: Build Android ARMv7 .so (Patched Final)
 
 on:
   workflow_dispatch:
@@ -31,31 +31,94 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch
 
-      - name: Patch typetree-generator-api (delete full assertion lines)
+      - name: Patch ALL dependencies for 32-bit
         run: |
-          GEN_FILE=$(find ~/.cargo/git/checkouts -path "*/typetree-generator-api-bindings-*/src/generated.rs" | head -1)
-          echo "Patching: $GEN_FILE"
-          # Delete FULL lines: ["desc"][::std::mem::xxx - Nusize];
-          sed -i '/\["[^"]*"\]\[::std::mem::.*- [0-9]*usize\];/d' "$GEN_FILE"
-          # Also delete lines without description prefix
-          sed -i '/\[::std::mem::.*- [0-9]*usize\]/d' "$GEN_FILE"
-          echo "Remaining assertions:"
-          grep -c "::std::mem::" "$GEN_FILE" || echo "0"
+          python3 << 'PYEOF'
+          import os, re, glob
 
-      - name: Patch dotnetdll u64 -> usize for 32-bit
-        run: |
-          TABLE_RS=$(find ~/.cargo/registry/src -path "*/dotnetdll-*/src/binary/metadata/table.rs" | head -1)
-          HEADER_RS=$(find ~/.cargo/registry/src -path "*/dotnetdll-*/src/binary/metadata/header.rs" | head -1)
-          
-          if [ -n "$TABLE_RS" ]; then
-            echo "Patching table.rs"
-            sed -i 's/let slice = mask.view_bits_mut::<Lsb0>();/let slice = (mask as usize).view_bits_mut::<Lsb0>();/g' "$TABLE_RS"
-          fi
-          
-          if [ -n "$HEADER_RS" ]; then
-            echo "Patching header.rs"
-            sed -i 's/valid.view_bits::<Lsb0>()/(valid as usize).view_bits::<Lsb0>()/g' "$HEADER_RS"
-          fi
+          # ===== 1. Patch typetree-generator-api-bindings =====
+          gen_files = glob.glob(os.path.expanduser(
+              "~/.cargo/git/checkouts/typetree-generator-api-bindings-*/src/generated.rs"
+          ))
+          for path in gen_files:
+              print(f"[1] Patching typetree: {path}")
+              with open(path, 'r') as f:
+                  lines = f.readlines()
+              
+              result = []
+              skip = False
+              brace_count = 0
+              
+              for line in lines:
+                  if not skip and 'const _:' in line and '()' in line and '=' in line and '{' in line:
+                      skip = True
+                      brace_count = line.count('{') - line.count('}')
+                      continue
+                  
+                  if skip:
+                      brace_count += line.count('{') - line.count('}')
+                      if brace_count <= 0:
+                          skip = False
+                      continue
+                  
+                  result.append(line)
+              
+              with open(path, 'w') as f:
+                  f.writelines(result)
+              print(f"    Lines: {len(lines)} -> {len(result)}")
+
+          # ===== 2. Patch dotnetdll table.rs =====
+          table_files = glob.glob(os.path.expanduser(
+              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/table.rs"
+          ))
+          for path in table_files:
+              print(f"[2] Patching dotnetdll table.rs: {path}")
+              with open(path, 'r') as f:
+                  content = f.read()
+              
+              content = re.sub(
+                  r'let mut mask: u64 = 0;',
+                  'let mut mask: usize = 0;',
+                  content
+              )
+              content = re.sub(
+                  r'let mut mask = 0u64;',
+                  'let mut mask = 0usize;',
+                  content
+              )
+              content = re.sub(
+                  r'let mut mask = 0_u64;',
+                  'let mut mask = 0usize;',
+                  content
+              )
+              content = re.sub(
+                  r'let slice = mask\\.view_bits_mut::<Lsb0>\\(\\);',
+                  'let mut mask_usize = mask as usize;\\n                    let slice = mask_usize.view_bits_mut::<Lsb0>();',
+                  content
+              )
+              
+              with open(path, 'w') as f:
+                  f.write(content)
+
+          # ===== 3. Patch dotnetdll header.rs =====
+          header_files = glob.glob(os.path.expanduser(
+              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/header.rs"
+          ))
+          for path in header_files:
+              print(f"[3] Patching dotnetdll header.rs: {path}")
+              with open(path, 'r') as f:
+                  content = f.read()
+              
+              content = content.replace(
+                  'for (num, exists) in valid.view_bits::<Lsb0>().into_iter().enumerate() {',
+                  'let valid_usize = valid as usize;\\n                for (num, exists) in valid_usize.view_bits::<Lsb0>().into_iter().enumerate() {'
+              )
+              
+              with open(path, 'w') as f:
+                  f.write(content)
+
+          print("[+] All patches applied")
+          PYEOF
 
       - name: Build bindings crate
         run: cargo build -p bindings --target armv7-linux-androideabi --release
@@ -65,3 +128,4 @@ jobs:
         with:
           name: libunityscenerepacker-armv7
           path: target/armv7-linux-androideabi/release/libunityscenerepacker.so
+
