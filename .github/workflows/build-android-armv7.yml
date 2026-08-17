@@ -26,7 +26,7 @@ jobs:
         run: |
           mkdir -p ~/.cargo
           echo "[target.armv7-linux-androideabi]" > ~/.cargo/config.toml
-name: Build Android ARMv7 .so (Patched Final)
+name: Build Android ARMv7 .so (Fixed)
 
 on:
   workflow_dispatch:
@@ -59,66 +59,91 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch
 
-      - name: Patch ALL for 32-bit (Python)
+      - name: Patch ALL for 32-bit ARM
         run: |
           python3 << 'PYEOF'
-          import os, glob
+          import os, glob, re
 
-          # ===== 1. typetree-generator-api: DELETE all assertion lines =====
+          # ===== 1. typetree-generator-api: DELETE all const assertion blocks =====
           for path in glob.glob(os.path.expanduser(
               "~/.cargo/git/checkouts/typetree-generator-api-bindings-*/src/generated.rs"
           )):
               print(f"[1] Cleaning {path}")
               with open(path, 'r') as f:
-                  lines = f.readlines()
+                  content = f.read()
+              orig_len = len(content)
+              # Delete entire const _: () = { ... }; blocks (non-greedy match inside braces)
+              content = re.sub(r'const\s+_\s*:\s*\(\)\s*=\s*\{[^{}]*\};', '', content, flags=re.DOTALL)
+              # Also delete any leftover ::std::mem:: lines and pure description lines
+              lines = content.split('\n')
               result = []
               for line in lines:
-                  # Delete ANY line containing ::std::mem:: (assertion body)
                   if '::std::mem::' in line:
                       continue
-                  # Delete leftover description lines like ["Size of..."]
                   s = line.strip()
-                  if s.startswith('["') and s.endswith('"]'):
+                  if re.match(r'^\["[^"]+"\]$', s):
                       continue
                   result.append(line)
+              content = '\n'.join(result)
               with open(path, 'w') as f:
-                  f.writelines(result)
-              print(f"    {len(lines)} -> {len(result)} lines")
+                  f.write(content)
+              print(f"    {orig_len} -> {len(content)} chars")
 
-          # ===== 2. dotnetdll table.rs: u64 -> usize =====
+          # ===== 2. dotnetdll table.rs: u64 mask -> usize internally =====
           for path in glob.glob(os.path.expanduser(
               "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/table.rs"
           )):
               print(f"[2] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
-              # Change mask type from u64 to usize
-              content = content.replace('let mut mask = 0u64;', 'let mut mask = 0usize;')
-              content = content.replace('let mut mask: u64 = 0;', 'let mut mask: usize = 0;')
-              # Fix view_bits_mut (remove as usize, mask is already usize)
-              content = content.replace('let slice = (mask as usize).view_bits_mut::<Lsb0>();',
-                                        'let slice = mask.view_bits_mut::<Lsb0>();')
-              content = content.replace('let mut mask_usize = mask as usize;\n                    let slice = mask_usize.view_bits_mut::<Lsb0>();',
-                                        'let slice = mask.view_bits_mut::<Lsb0>();')
+
+              # valid_mask: change let mut mask = 0; -> let mut mask = 0usize;
+              content = re.sub(
+                  r'(pub fn valid_mask\(&self\) -> u64 \{)\s*let mut mask = 0;',
+                  r'\1\n        let mut mask = 0usize;',
+                  content
+              )
+              # sorted_mask: same
+              content = re.sub(
+                  r'(pub fn sorted_mask\(\) -> u64 \{)\s*let mut mask = 0;',
+                  r'\1\n        let mut mask = 0usize;',
+                  content
+              )
+              # valid_mask: change trailing "mask" return to "mask as u64"
+              content = re.sub(
+                  r'(pub fn valid_mask\(&self\) -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
+                  r'\1\n\2mask as u64\n\3}',
+                  content
+              )
+              # sorted_mask: same
+              content = re.sub(
+                  r'(pub fn sorted_mask\(\) -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
+                  r'\1\n\2mask as u64\n\3}',
+                  content
+              )
+
               with open(path, 'w') as f:
                   f.write(content)
+              print("    table.rs patched")
 
-          # ===== 3. dotnetdll header.rs: u64 -> usize =====
+          # ===== 3. dotnetdll header.rs: valid.view_bits -> usize binding =====
           for path in glob.glob(os.path.expanduser(
               "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/header.rs"
           )):
               print(f"[3] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
-              # Create a usize binding before view_bits
+
               content = content.replace(
                   'for (num, exists) in valid.view_bits::<Lsb0>().into_iter().enumerate() {',
-                  'let valid_usize = valid as usize;\n                for (num, exists) in valid_usize.view_bits::<Lsb0>().into_iter().enumerate() {'
+                  'let valid_usize = valid as usize;\n        for (num, exists) in valid_usize.view_bits::<Lsb0>().into_iter().enumerate() {'
               )
+
               with open(path, 'w') as f:
                   f.write(content)
+              print("    header.rs patched")
 
-          print("[+] All patches done")
+          print("[+] All patches applied")
           PYEOF
 
       - name: Build bindings crate
