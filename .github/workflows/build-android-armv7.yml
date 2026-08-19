@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed)
+name: Build Android ARMv7 .so (Fixed v4)
 
 on:
   workflow_dispatch:
@@ -35,17 +35,12 @@ jobs:
       - name: Patch ALL for 32-bit ARM
         run: |
           python3 << 'PYEOF'
-          import os, re
-
-          def find_file(base, keyword, filename):
-              for root, dirs, files in os.walk(os.path.expanduser(base)):
-                  if keyword in root and filename in files:
-                      return os.path.join(root, filename)
-              return None
+          import os, glob, re
 
           # ===== 1. typetree-generator-api =====
-          path = find_file("~/.cargo/git/checkouts", "typetree-generator-api", "generated.rs")
-          if path:
+          for path in glob.glob(os.path.expanduser(
+              "~/.cargo/git/checkouts/typetree-generator-api-bindings-*/src/generated.rs"
+          )):
               print(f"[1] Cleaning {path}")
               with open(path, 'r') as f:
                   content = f.read()
@@ -64,12 +59,11 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print(f"    {orig_len} -> {len(content)} chars")
-          else:
-              print("[!] WARNING: generated.rs not found!")
 
           # ===== 2. dotnetdll table.rs =====
-          path = find_file("~/.cargo/registry/src", "dotnetdll", "table.rs")
-          if path:
+          for path in glob.glob(os.path.expanduser(
+              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/table.rs"
+          )):
               print(f"[2] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
@@ -96,12 +90,11 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print("    table.rs patched")
-          else:
-              print("[!] WARNING: table.rs not found!")
 
           # ===== 3. dotnetdll header.rs =====
-          path = find_file("~/.cargo/registry/src", "dotnetdll", "header.rs")
-          if path:
+          for path in glob.glob(os.path.expanduser(
+              "~/.cargo/registry/src/*/dotnetdll-*/src/binary/metadata/header.rs"
+          )):
               print(f"[3] Patching {path}")
               with open(path, 'r') as f:
                   content = f.read()
@@ -112,8 +105,21 @@ jobs:
               with open(path, 'w') as f:
                   f.write(content)
               print("    header.rs patched")
-          else:
-              print("[!] WARNING: header.rs not found!")
+
+          # ===== 4. rabex-env: accept "Data" directory =====
+          for path in glob.glob(os.path.expanduser(
+              "~/.cargo/git/checkouts/rabex-env-*/src/resolver/game_files.rs"
+          )):
+              print(f"[4] Patching {path}")
+              with open(path, 'r') as f:
+                  content = f.read()
+              content = content.replace(
+                  'name.ends_with("_Data")',
+                  'name.ends_with("_Data") || name.ends_with("Data")'
+              )
+              with open(path, 'w') as f:
+                  f.write(content)
+              print("    game_files.rs patched")
 
           print("[+] All patches applied")
           PYEOF
