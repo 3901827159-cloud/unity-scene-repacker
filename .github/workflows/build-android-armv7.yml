@@ -12,7 +12,7 @@ jobs:
       - name: Unzip source package
         run: |
           # 解压你上传的 ZIP
-          unzip -o "LSCR-本地存储激活码 .zip" -d .
+          unzip -o "LSCR-本地存储激活码.zip" -d .
           # 将里面的内容移到根目录（覆盖旧文件）
           mv LSCR-package/* . || true
           rm -rf LSCR-package
