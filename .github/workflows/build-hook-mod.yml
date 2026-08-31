@@ -22,13 +22,13 @@ jobs:
 
       - name: Compile Hook Mod
         run: |
-          # 如果解压后文件都在当前目录（没有 HookModSource 文件夹），就直接编译
           mcs /target:library \
               /reference:Assembly-CSharp.dll \
-              /reference:MonoMod.RuntimeDetour.dll \
               /reference:UnityEngine.dll \
               /reference:UnityEngine.CoreModule.dll \
               /reference:UnityEngine.AssetBundleModule.dll \
+              /reference:MonoMod.RuntimeDetour.dll \
+              /reference:System.Xml.Linq.dll \
               /out:PreloadCacheMod.dll \
               PreloadCacheMod.cs
 
