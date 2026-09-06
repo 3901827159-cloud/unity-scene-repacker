@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed v9 - Correct mv)
+name: Build Android ARMv7 .so (Fixed v9 - Correct mv + cargo clean)
 
 on:
   workflow_dispatch:
@@ -177,7 +177,11 @@ jobs:
           PYEOF
 
       - name: Build bindings crate
-        run: cargo build -p bindings --target armv7-linux-androideabi --release
+        run: |
+          # Force clean rebuild - without this, cargo reuses cached objects
+          # from previous builds and the new source code won't be compiled.
+          cargo clean
+          cargo build -p bindings --target armv7-linux-androideabi --release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
