@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed v4)
+name: Build Android ARMv7 .so (Kiran Edition)
 
 on:
   workflow_dispatch:
@@ -11,9 +11,8 @@ jobs:
 
       - name: Unzip source package
         run: |
-          # 解压你上传的 ZIP
-          unzip -o "LSCR-本地存储法源码包.zip" -d .
-          # 将里面的内容移到根目录（覆盖旧文件）
+          # 解压新的千问版源码包（已含 batched_cache + m_TargetPlatform=13）
+          unzip -o "LSCR-package-v2-patched.zip" -d .
           mv LSCR-package/* . || true
           rm -rf LSCR-package
 
@@ -139,28 +138,19 @@ jobs:
           else:
               print("[!] WARNING: game_files.rs not found!")
 
-          # ===== 5. rabex builder.rs — fix hardcoded Linux64 platform =====
-          # Try local ../rabex first (if uploaded), fallback to registry
-          local_path = os.path.join("..", "rabex", "src", "files", "serializedfile", "builder.rs")
+          # ===== 5. rabex builder.rs — verify already patched =====
+          # Kiran source package already has Some(13), but double-check
+          local_path = os.path.join("rabex", "src", "files", "serializedfile", "builder.rs")
           if os.path.exists(local_path):
-              path = local_path
-              print(f"[5] Patching local rabex: {path}")
-          else:
-              path = find_file("~/.cargo/registry/src", "rabex", "builder.rs")
-              print(f"[5] Patching registry rabex: {path}")
-          
-          if path and os.path.exists(path):
-              with open(path, 'r') as f:
+              print(f"[5] Verifying local rabex: {local_path}")
+              with open(local_path, 'r') as f:
                   content = f.read()
-              content = content.replace('Some(24)', 'Some(13)')
-              with open(path, 'w') as f:
-                  f.write(content)
               if 'Some(13)' in content and 'Some(24)' not in content:
-                  print("    SUCCESS: m_TargetPlatform = 13 (Android)")
+                  print("    VERIFIED: m_TargetPlatform = 13 (Android)")
               else:
-                  print("    WARNING: patch may have failed")
+                  print("    WARNING: m_TargetPlatform not patched")
           else:
-              print("[!] WARNING: rabex builder.rs not found!")
+              print("    Skipping (not in local source)")
 
           print("[+] All patches applied")
           PYEOF
