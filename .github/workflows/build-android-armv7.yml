@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed v7)
+name: Build Android ARMv7 .so (Fixed v8 - Auto Check)
 
 on:
   workflow_dispatch:
@@ -9,12 +9,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify source package exists
+        run: |
+          if [ ! -f "LSCR-package-v3-patched.zip" ]; then
+            echo "ERROR: LSCR-package-v3-patched.zip not found in repository root!"
+            echo "Please upload the correct ZIP file before running this workflow."
+            ls -la *.zip 2>/dev/null || echo "No ZIP files found."
+            exit 1
+          fi
+          echo "OK: Found LSCR-package-v3-patched.zip ($(stat -c%s LSCR-package-v3-patched.zip) bytes)"
+
       - name: Unzip source package
         run: |
-          # 解压新的千问版源码包（已含 batched_cache + bindings_lib + m_TargetPlatform=13）
           unzip -o "LSCR-package-v3-patched.zip" -d .
           mv LSCR-package/* . || true
           rm -rf LSCR-package
+          echo "Source extracted. Key files:"
+          ls -la src/lib.rs bindings/src/lib.rs 2>/dev/null || true
+
+      - name: Verify new bindings have export_batched
+        run: |
+          if grep -q "export_batched" bindings/src/lib.rs; then
+            echo "OK: bindings/src/lib.rs contains export_batched"
+          else
+            echo "ERROR: bindings/src/lib.rs missing export_batched! Source package is wrong version."
+            exit 1
+          fi
 
       - name: Install Rust
         run: |
@@ -139,7 +159,6 @@ jobs:
               print("[!] WARNING: game_files.rs not found!")
 
           # ===== 5. rabex builder.rs — verify already patched =====
-          # Kiran source package already has Some(13), but double-check
           local_path = os.path.join("rabex", "src", "files", "serializedfile", "builder.rs")
           if os.path.exists(local_path):
               print(f"[5] Verifying local rabex: {local_path}")
