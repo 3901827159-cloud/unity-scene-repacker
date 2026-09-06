@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed v8 - Auto Check)
+name: Build Android ARMv7 .so (Fixed v9 - Correct mv)
 
 on:
   workflow_dispatch:
@@ -13,7 +13,6 @@ jobs:
         run: |
           if [ ! -f "LSCR-package-v3-patched.zip" ]; then
             echo "ERROR: LSCR-package-v3-patched.zip not found in repository root!"
-            echo "Please upload the correct ZIP file before running this workflow."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
@@ -21,15 +20,18 @@ jobs:
 
       - name: Unzip source package
         run: |
+          # CRITICAL: Remove old source dirs first, or mv will NEST them
+          # instead of overwriting when dest already exists.
+          rm -rf unity-scene-repacker rabex
           unzip -o "LSCR-package-v3-patched.zip" -d .
           mv LSCR-package/* . || true
           rm -rf LSCR-package
           echo "Source extracted. Key files:"
-          ls -la src/lib.rs bindings/src/lib.rs 2>/dev/null || true
+          ls -la unity-scene-repacker/src/lib.rs unity-scene-repacker/bindings/src/lib.rs 2>/dev/null || true
 
       - name: Verify new bindings have export_batched
         run: |
-          if grep -q "export_batched" bindings/src/lib.rs; then
+          if grep -q "export_batched" unity-scene-repacker/bindings/src/lib.rs; then
             echo "OK: bindings/src/lib.rs contains export_batched"
           else
             echo "ERROR: bindings/src/lib.rs missing export_batched! Source package is wrong version."
