@@ -65,7 +65,7 @@ jobs:
                   if '::std::mem::' in line:
                       continue
                   s = line.strip()
-                  if re.match(r'^\["[^"]+"\]$', s):
+                  if re.match(r'^$$"[^"]+"$$$', s):
                       continue
                   result.append(line)
               content = '\n'.join(result)
@@ -82,7 +82,7 @@ jobs:
               with open(path, 'r') as f:
                   content = f.read()
               content = re.sub(
-                  r'(pub fn valid_mask\(&self\) -> u64 \{)\s*let mut mask = 0;',
+                  r'(pub fn valid_mask$&self$ -> u64 \{)\s*let mut mask = 0;',
                   r'\1\n        let mut mask = 0usize;',
                   content
               )
@@ -92,7 +92,7 @@ jobs:
                   content
               )
               content = re.sub(
-                  r'(pub fn valid_mask\(&self\) -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
+                  r'(pub fn valid_mask$&self$ -> u64 \{[\s\S]*?)\n(\s+)mask\n(\s+)\}',
                   r'\1\n\2mask as u64\n\3}',
                   content
               )
@@ -138,6 +138,24 @@ jobs:
               print("    game_files.rs patched")
           else:
               print("[!] WARNING: game_files.rs not found!")
+
+          # ===== 5. rabex builder.rs — fix hardcoded Linux64 platform =====
+          path = find_file("~/.cargo/registry/src", "rabex", "builder.rs")
+          if path:
+              print(f"[5] Patching rabex builder.rs: {path}")
+              with open(path, 'r') as f:
+                  content = f.read()
+              # Replace hardcoded Linux64 (24) with Android (13)
+              content = content.replace('Some(24)', 'Some(13)')
+              with open(path, 'w') as f:
+                  f.write(content)
+              # Verify
+              if 'Some(13)' in content and 'Some(24)' not in content:
+                  print("    SUCCESS: m_TargetPlatform = 13 (Android)")
+              else:
+                  print("    WARNING: rabex patch may have failed")
+          else:
+              print("[!] WARNING: rabex builder.rs not found!")
 
           print("[+] All patches applied")
           PYEOF
