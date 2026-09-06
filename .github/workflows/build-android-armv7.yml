@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Kiran Edition)
+name: Build Android ARMv7 .so (Fixed v7)
 
 on:
   workflow_dispatch:
@@ -11,8 +11,8 @@ jobs:
 
       - name: Unzip source package
         run: |
-          # 解压新的千问版源码包（已含 batched_cache + m_TargetPlatform=13）
-          unzip -o "LSCR-package-v2-patched.zip" -d .
+          # 解压新的千问版源码包（已含 batched_cache + bindings_lib + m_TargetPlatform=13）
+          unzip -o "LSCR-package-v3-patched.zip" -d .
           mv LSCR-package/* . || true
           rm -rf LSCR-package
 
