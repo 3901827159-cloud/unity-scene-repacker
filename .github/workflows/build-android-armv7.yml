@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (Fixed v9 - Correct mv + cargo clean)
+name: Build Android ARMv7 .so (v11 - Fixed missing batched_cache + builder.rs patch)
 
 on:
   workflow_dispatch:
@@ -11,32 +11,49 @@ jobs:
 
       - name: Verify source package exists
         run: |
-          if [ ! -f "LSCR-package-v3-patched.zip" ]; then
-            echo "ERROR: LSCR-package-v3-patched.zip not found in repository root!"
+          if [ ! -f "LSCR-package-v4-patched.zip" ]; then
+            echo "ERROR: LSCR-package-v4-patched.zip not found in repository root!"
+            echo "Please upload LSCR-package-v4-patched.zip to the repo root."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
-          echo "OK: Found LSCR-package-v3-patched.zip ($(stat -c%s LSCR-package-v3-patched.zip) bytes)"
+          echo "OK: Found LSCR-package-v4-patched.zip ($(stat -c%s LSCR-package-v4-patched.zip) bytes)"
+          echo "MD5: $(md5sum LSCR-package-v4-patched.zip | cut -d' ' -f1)"
 
       - name: Unzip source package
         run: |
-          # CRITICAL: Remove old source dirs first, or mv will NEST them
-          # instead of overwriting when dest already exists.
-          rm -rf unity-scene-repacker rabex
-          unzip -o "LSCR-package-v3-patched.zip" -d .
-          mv LSCR-package/* . || true
           rm -rf LSCR-package
-          echo "Source extracted. Key files:"
-          ls -la unity-scene-repacker/src/lib.rs unity-scene-repacker/bindings/src/lib.rs 2>/dev/null || true
+          unzip -o "LSCR-package-v4-patched.zip" -d .
+          echo "ZIP extracted. Contents:"
+          ls -la LSCR-package/
+          echo "=== unity-scene-repacker/src/ ==="
+          ls -la LSCR-package/unity-scene-repacker/src/
 
-      - name: Verify new bindings have export_batched
+      - name: Verify critical source files
         run: |
-          if grep -q "export_batched" unity-scene-repacker/bindings/src/lib.rs; then
-            echo "OK: bindings/src/lib.rs contains export_batched"
-          else
-            echo "ERROR: bindings/src/lib.rs missing export_batched! Source package is wrong version."
+          echo "=== Checking batched_cache.rs ==="
+          if [ ! -f "LSCR-package/unity-scene-repacker/src/batched_cache.rs" ]; then
+            echo "FATAL: batched_cache.rs is MISSING from the ZIP!"
+            echo "This was the root cause of v3-patched producing identical .so (build fails silently)."
             exit 1
           fi
+          echo "OK: batched_cache.rs exists ($(stat -c%s LSCR-package/unity-scene-repacker/src/batched_cache.rs) bytes)"
+
+          echo "=== Checking export_batched in bindings ==="
+          if grep -q "export_batched" LSCR-package/unity-scene-repacker/bindings/src/lib.rs; then
+            echo "OK: bindings/src/lib.rs contains export_batched"
+          else
+            echo "FATAL: bindings/src/lib.rs missing export_batched!"
+            exit 1
+          fi
+
+          echo "=== Checking lib.rs references batched_cache ==="
+          head -1 LSCR-package/unity-scene-repacker/src/lib.rs
+
+          echo "=== Checking to_lowercase in lib.rs ==="
+          grep -c "to_lowercase" LSCR-package/unity-scene-repacker/src/lib.rs
+
+          echo "=== All source verifications passed ==="
 
       - name: Install Rust
         run: |
@@ -59,9 +76,11 @@ jobs:
           cat ~/.cargo/config.toml
 
       - name: Fetch dependencies
-        run: cargo fetch
+        run: |
+          cd LSCR-package/unity-scene-repacker
+          cargo fetch
 
-      - name: Patch ALL for 32-bit ARM
+      - name: Patch ALL for 32-bit ARM + Android platform fix
         run: |
           python3 << 'PYEOF'
           import os, re
@@ -69,6 +88,13 @@ jobs:
           def find_file(base, keyword, filename):
               for root, dirs, files in os.walk(os.path.expanduser(base)):
                   if keyword in root and filename in files:
+                      return os.path.join(root, filename)
+              return None
+
+          def find_file_recursive(base, filename):
+              """Search for a file in all subdirectories."""
+              for root, dirs, files in os.walk(os.path.expanduser(base)):
+                  if filename in files:
                       return os.path.join(root, filename)
               return None
 
@@ -160,31 +186,75 @@ jobs:
           else:
               print("[!] WARNING: game_files.rs not found!")
 
-          # ===== 5. rabex builder.rs — verify already patched =====
-          local_path = os.path.join("rabex", "src", "files", "serializedfile", "builder.rs")
-          if os.path.exists(local_path):
-              print(f"[5] Verifying local rabex: {local_path}")
-              with open(local_path, 'r') as f:
+          # ===== 5. rabex builder.rs -- fix hardcoded Linux64 platform -> Android =====
+          # builder.rs is inside the rabex crate (from crates.io registry)
+          # It hardcodes m_TargetPlatform: Some(24) which is Linux64.
+          # Android armv7 needs Some(13).
+          # Try registry first (rabex from crates.io), then git checkouts
+          path = find_file("~/.cargo/registry/src", "rabex", "builder.rs")
+          if not path:
+              # Try broader search in case directory naming differs
+              path = find_file_recursive("~/.cargo/registry/src", "builder.rs")
+              if path and "rabex" not in path.lower():
+                  path = None
+          if not path:
+              path = find_file("~/.cargo/git/checkouts", "rabex", "builder.rs")
+
+          if path and os.path.exists(path):
+              print(f"[5] Patching {path}")
+              with open(path, 'r') as f:
                   content = f.read()
-              if 'Some(13)' in content and 'Some(24)' not in content:
-                  print("    VERIFIED: m_TargetPlatform = 13 (Android)")
+              if 'Some(24)' in content:
+                  content = content.replace('Some(24)', 'Some(13)')
+                  with open(path, 'w') as f:
+                      f.write(content)
+                  print("    SUCCESS: m_TargetPlatform Some(24) -> Some(13) (Android)")
+              elif 'Some(13)' in content:
+                  print("    SKIP: already patched (Some(13) found, no Some(24))")
               else:
-                  print("    WARNING: m_TargetPlatform not patched")
+                  print("    WARNING: neither Some(24) nor Some(13) found - manual check needed")
+                  # Print context around m_TargetPlatform for debugging
+                  for i, line in enumerate(content.split('\n')):
+                      if 'm_TargetPlatform' in line or 'TargetPlatform' in line:
+                          print(f"    Line {i+1}: {line.strip()}")
           else:
-              print("    Skipping (not in local source)")
+              print("[!] WARNING: rabex builder.rs not found!")
+              print("    Searching all builder.rs files in cargo dirs...")
+              for base in ["~/.cargo/registry/src", "~/.cargo/git/checkouts"]:
+                  found = find_file_recursive(base, "builder.rs")
+                  if found:
+                      print(f"    Found: {found}")
 
           print("[+] All patches applied")
           PYEOF
 
       - name: Build bindings crate
         run: |
-          # Force clean rebuild - without this, cargo reuses cached objects
-          # from previous builds and the new source code won't be compiled.
+          cd LSCR-package/unity-scene-repacker
           cargo clean
-          cargo build -p bindings --target armv7-linux-androideabi --release
+          echo "=== Building bindings crate for armv7-android ==="
+          cargo build -p bindings --target armv7-linux-androideabi --release 2>&1
+          BUILD_EXIT=$?
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "FATAL: cargo build failed with exit code $BUILD_EXIT"
+            exit 1
+          fi
+          # Verify .so was produced
+          SO_PATH="target/armv7-linux-androideabi/release/libunityscenerepacker.so"
+          if [ ! -f "$SO_PATH" ]; then
+            echo "FATAL: .so not found at $SO_PATH"
+            ls -la target/armv7-linux-androideabi/release/ 2>/dev/null || echo "release dir not found"
+            exit 1
+          fi
+          echo "=== Build successful ==="
+          echo ".so size: $(stat -c%s $SO_PATH) bytes"
+          echo ".so MD5: $(md5sum $SO_PATH | cut -d' ' -f1)"
+          # Copy to repo root
+          cp "$SO_PATH" ../../libunityscenerepacker.so
+          echo "Copied to repo root. Final size: $(stat -c%s ../../libunityscenerepacker.so) bytes"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libunityscenerepacker-armv7
-          path: target/armv7-linux-androideabi/release/libunityscenerepacker.so
+          name: libunityscenerepacker-armv7-v11
+          path: libunityscenerepacker.so
