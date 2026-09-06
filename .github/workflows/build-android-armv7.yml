@@ -8,6 +8,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+name: Build Android ARMv7 .so (v12 - FIXED serializedfile builder.rs patch)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-armv7:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Verify source package exists
         run: |
@@ -186,19 +196,18 @@ jobs:
           else:
               print("[!] WARNING: game_files.rs not found!")
 
-          # ===== 5. rabex builder.rs -- fix hardcoded Linux64 platform -> Android =====
-          # builder.rs is inside the rabex crate (from crates.io registry)
-          # It hardcodes m_TargetPlatform: Some(24) which is Linux64.
+          # ===== 5. rabex serializedfile/builder.rs -- fix hardcoded Linux64 platform -> Android =====
+          # m_TargetPlatform: Some(24) is hardcoded in serializedfile/builder.rs (NOT bundlefile/builder.rs).
           # Android armv7 needs Some(13).
-          # Try registry first (rabex from crates.io), then git checkouts
-          path = find_file("~/.cargo/registry/src", "rabex", "builder.rs")
-          if not path:
-              # Try broader search in case directory naming differs
-              path = find_file_recursive("~/.cargo/registry/src", "builder.rs")
-              if path and "rabex" not in path.lower():
-                  path = None
-          if not path:
-              path = find_file("~/.cargo/git/checkouts", "rabex", "builder.rs")
+          # We must match "serializedfile" in the path to avoid hitting bundlefile/builder.rs.
+          path = None
+          for base in ["~/.cargo/registry/src", "~/.cargo/git/checkouts"]:
+              for root, dirs, files in os.walk(os.path.expanduser(base)):
+                  if "builder.rs" in files and "serializedfile" in root:
+                      path = os.path.join(root, "builder.rs")
+                      break
+              if path:
+                  break
 
           if path and os.path.exists(path):
               print(f"[5] Patching {path}")
@@ -213,17 +222,16 @@ jobs:
                   print("    SKIP: already patched (Some(13) found, no Some(24))")
               else:
                   print("    WARNING: neither Some(24) nor Some(13) found - manual check needed")
-                  # Print context around m_TargetPlatform for debugging
                   for i, line in enumerate(content.split('\n')):
                       if 'm_TargetPlatform' in line or 'TargetPlatform' in line:
                           print(f"    Line {i+1}: {line.strip()}")
           else:
-              print("[!] WARNING: rabex builder.rs not found!")
+              print("[!] WARNING: rabex serializedfile/builder.rs not found!")
               print("    Searching all builder.rs files in cargo dirs...")
               for base in ["~/.cargo/registry/src", "~/.cargo/git/checkouts"]:
-                  found = find_file_recursive(base, "builder.rs")
-                  if found:
-                      print(f"    Found: {found}")
+                  for root, dirs, files in os.walk(os.path.expanduser(base)):
+                      if "builder.rs" in files and "rabex" in root.lower():
+                          print(f"    Found: {os.path.join(root, 'builder.rs')}")
 
           print("[+] All patches applied")
           PYEOF
