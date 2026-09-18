@@ -11,19 +11,19 @@ jobs:
 
       - name: Verify source package exists
         run: |
-          if [ ! -f "LSCR-package-v5-ptracefix.zip" ]; then
-            echo "ERROR: LSCR-package-v5-ptracefix.zip not found in repository root!"
-            echo "Please upload LSCR-package-v5-ptracefix.zip to the repo root."
+          if [ ! -f "LSCR-package-v6-local-deps.zip" ]; then
+            echo "ERROR: LSCR-package-v6-local-deps.zip not found in repository root!"
+            echo "Please upload LSCR-package-v6-local-deps.zip to the repo root."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
-          echo "OK: Found LSCR-package-v5-ptracefix.zip ($(stat -c%s LSCR-package-v5-ptracefix.zip) bytes)"
-          echo "MD5: $(md5sum LSCR-package-v5-ptracefix.zip | cut -d' ' -f1)"
+          echo "OK: Found LSCR-package-v6-local-deps.zip ($(stat -c%s LSCR-package-v6-local-deps.zip) bytes)"
+          echo "MD5: $(md5sum LSCR-package-v6-local-deps.zip | cut -d' ' -f1)"
 
       - name: Unzip source package
         run: |
           rm -rf LSCR-package
-          unzip -o "LSCR-package-v5-ptracefix.zip" -d .
+          unzip -o "LSCR-package-v6-local-deps.zip" -d .
           echo "ZIP extracted. Contents:"
           ls -la LSCR-package/
           echo "=== unity-scene-repacker/src/ ==="
