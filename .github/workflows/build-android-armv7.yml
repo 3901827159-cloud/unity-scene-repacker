@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (v12 - FIXED serializedfile builder.rs patch)
+name: Build Android ARMv7 .so (v13 - PPtr Fix)
 
 on:
   workflow_dispatch:
@@ -11,19 +11,19 @@ jobs:
 
       - name: Verify source package exists
         run: |
-          if [ ! -f "LSCR-package-v4-patched.zip" ]; then
-            echo "ERROR: LSCR-package-v4-patched.zip not found in repository root!"
-            echo "Please upload LSCR-package-v4-patched.zip to the repo root."
+          if [ ! -f "LSCR-package-v5-ptracefix.zip" ]; then
+            echo "ERROR: LSCR-package-v5-ptracefix.zip not found in repository root!"
+            echo "Please upload LSCR-package-v5-ptracefix.zip to the repo root."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
-          echo "OK: Found LSCR-package-v4-patched.zip ($(stat -c%s LSCR-package-v4-patched.zip) bytes)"
-          echo "MD5: $(md5sum LSCR-package-v4-patched.zip | cut -d' ' -f1)"
+          echo "OK: Found LSCR-package-v5-ptracefix.zip ($(stat -c%s LSCR-package-v5-ptracefix.zip) bytes)"
+          echo "MD5: $(md5sum LSCR-package-v5-ptracefix.zip | cut -d' ' -f1)"
 
       - name: Unzip source package
         run: |
           rm -rf LSCR-package
-          unzip -o "LSCR-package-v4-patched.zip" -d .
+          unzip -o "LSCR-package-v5-ptracefix.zip" -d .
           echo "ZIP extracted. Contents:"
           ls -la LSCR-package/
           echo "=== unity-scene-repacker/src/ ==="
@@ -34,7 +34,6 @@ jobs:
           echo "=== Checking batched_cache.rs ==="
           if [ ! -f "LSCR-package/unity-scene-repacker/src/batched_cache.rs" ]; then
             echo "FATAL: batched_cache.rs is MISSING from the ZIP!"
-            echo "This was the root cause of v3-patched producing identical .so (build fails silently)."
             exit 1
           fi
           echo "OK: batched_cache.rs exists ($(stat -c%s LSCR-package/unity-scene-repacker/src/batched_cache.rs) bytes)"
@@ -47,11 +46,12 @@ jobs:
             exit 1
           fi
 
-          echo "=== Checking lib.rs references batched_cache ==="
-          head -1 LSCR-package/unity-scene-repacker/src/lib.rs
-
-          echo "=== Checking to_lowercase in lib.rs ==="
-          grep -c "to_lowercase" LSCR-package/unity-scene-repacker/src/lib.rs
+          echo "=== Checking PPtr fix in trace_pptr.rs ==="
+          if grep -q "FIX: PPtr points to pruned object" LSCR-package/rabex-env/src/trace_pptr.rs; then
+            echo "OK: trace_pptr.rs contains PPtr fix (null-out dangling refs)"
+          else
+            echo "WARNING: trace_pptr.rs missing PPtr fix - may produce corrupted bundle"
+          fi
 
           echo "=== All source verifications passed ==="
 
@@ -187,9 +187,6 @@ jobs:
               print("[!] WARNING: game_files.rs not found!")
 
           # ===== 5. rabex serializedfile/builder.rs -- fix hardcoded Linux64 platform -> Android =====
-          # m_TargetPlatform: Some(24) is hardcoded in serializedfile/builder.rs (NOT bundlefile/builder.rs).
-          # Android armv7 needs Some(13).
-          # We must match "serializedfile" in the path to avoid hitting bundlefile/builder.rs.
           path = None
           for base in ["~/.cargo/registry/src", "~/.cargo/git/checkouts"]:
               for root, dirs, files in os.walk(os.path.expanduser(base)):
@@ -254,5 +251,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libunityscenerepacker-armv7-v11
+          name: libunityscenerepacker-armv7-v13
           path: libunityscenerepacker.so
