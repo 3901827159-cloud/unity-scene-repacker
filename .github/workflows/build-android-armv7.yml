@@ -75,6 +75,45 @@ jobs:
           echo 'linker = "'$LINKER'"' >> ~/.cargo/config.toml
           cat ~/.cargo/config.toml
 
+      - name: Clean affected caches (keep downloaded deps)
+        run: |
+          echo "=== Cleaning only caches that affect our local changes ==="
+          # 1. Remove any old rabex-env cached builds to force recompilation of local path dep
+          cd LSCR-package/unity-scene-repacker
+          cargo clean -p rabex-env 2>/dev/null || true
+          # 2. Remove Cargo.lock if it exists (prevents checksum-based skip)
+          rm -f Cargo.lock
+          # 3. Clean target dir for good measure
+          cargo clean
+          # 4. Remove ONLY rabex-env related cached source/git checkouts
+          #    (keep dotnetdll, typetree-generator-api, etc. - they will be re-downloaded & patched)
+          echo "=== Removing rabex-env specific caches ==="
+          rm -rf ~/.cargo/registry/src/*/rabex-env-* 2>/dev/null || true
+          rm -rf ~/.cargo/registry/cache/*/rabex-env-* 2>/dev/null || true
+          rm -rf ~/.cargo/git/checkouts/*rabex-env* 2>/dev/null || true
+          # 5. Remove any stale lockfile references in the global cargo dir
+          find ~/.cargo/registry/src -maxdepth 1 -name "*rabex-env*" -type d -exec rm -rf {} + 2>/dev/null || true
+          echo "=== Cache cleanup done ==="
+
+      - name: Verify rabex-env source contains fix before build
+        run: |
+          echo "=== Verifying rabex-env fix is present in extracted source ==="
+          RABEX_SRC="LSCR-package/rabex-env/src/trace_pptr.rs"
+          if [ ! -f "$RABEX_SRC" ]; then
+            echo "FATAL: rabex-env source not found at $RABEX_SRC"
+            exit 1
+          fi
+          echo "--- First 100 lines of trace_pptr.rs ---"
+          head -n 100 "$RABEX_SRC"
+          echo "---"
+          if grep -q "FIX: PPtr points to pruned object" "$RABEX_SRC"; then
+            echo "OK: FIX marker found in trace_pptr.rs"
+          else
+            echo "WARNING: FIX marker not found - build will use unpatched rabex-env"
+          fi
+          echo "File size: $(stat -c%s $RABEX_SRC) bytes"
+          echo "File MD5: $(md5sum $RABEX_SRC | cut -d' ' -f1)"
+
       - name: Fetch dependencies
         run: |
           cd LSCR-package/unity-scene-repacker
@@ -226,7 +265,8 @@ jobs:
       - name: Build bindings crate
         run: |
           cd LSCR-package/unity-scene-repacker
-          cargo clean
+          echo "=== Pre-build: Force cargo to rebuild rabex-env ==="
+          cargo clean -p rabex-env 2>/dev/null || true
           echo "=== Building bindings crate for armv7-android ==="
           cargo build -p bindings --target armv7-linux-androideabi --release 2>&1
           BUILD_EXIT=$?
@@ -244,6 +284,11 @@ jobs:
           echo "=== Build successful ==="
           echo ".so size: $(stat -c%s $SO_PATH) bytes"
           echo ".so MD5: $(md5sum $SO_PATH | cut -d' ' -f1)"
+          # Print comparison hint: this hash MUST differ from previous builds
+          echo "=== HASH VERIFICATION ==="
+          echo "Compare this MD5 with your previous .so"
+          echo "If identical, the fix was NOT compiled into this build."
+          echo "=== Copying artifact ==="
           # Copy to repo root
           cp "$SO_PATH" ../../libunityscenerepacker.so
           echo "Copied to repo root. Final size: $(stat -c%s ../../libunityscenerepacker.so) bytes"
