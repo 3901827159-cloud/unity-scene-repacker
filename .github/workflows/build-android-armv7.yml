@@ -1,7 +1,12 @@
-name: Build Android ARMv7 .so (v13 - PPtr Fix)
+name: Build Android ARMv7 .so (v14 - PPtr Zero Fix)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-android-armv7.yml'
+      - 'LSCR-package-v7-pptr-zero-fix.zip'
 
 jobs:
   build-armv7:
@@ -11,19 +16,19 @@ jobs:
 
       - name: Verify source package exists
         run: |
-          if [ ! -f "LSCR-package-v6-local-deps.zip" ]; then
-            echo "ERROR: LSCR-package-v6-local-deps.zip not found in repository root!"
-            echo "Please upload LSCR-package-v6-local-deps.zip to the repo root."
+          if [ ! -f "LSCR-package-v7-pptr-zero-fix.zip" ]; then
+            echo "ERROR: LSCR-package-v7-pptr-zero-fix.zip not found in repository root!"
+            echo "Please upload LSCR-package-v7-pptr-zero-fix.zip to the repo root."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
-          echo "OK: Found LSCR-package-v6-local-deps.zip ($(stat -c%s LSCR-package-v6-local-deps.zip) bytes)"
-          echo "MD5: $(md5sum LSCR-package-v6-local-deps.zip | cut -d' ' -f1)"
+          echo "OK: Found LSCR-package-v7-pptr-zero-fix.zip ($(stat -c%s LSCR-package-v7-pptr-zero-fix.zip) bytes)"
+          echo "MD5: $(md5sum LSCR-package-v7-pptr-zero-fix.zip | cut -d' ' -f1)"
 
       - name: Unzip source package
         run: |
           rm -rf LSCR-package
-          unzip -o "LSCR-package-v6-local-deps.zip" -d .
+          unzip -o "LSCR-package-v7-pptr-zero-fix.zip" -d .
           echo "ZIP extracted. Contents:"
           ls -la LSCR-package/
           echo "=== unity-scene-repacker/src/ ==="
@@ -46,11 +51,23 @@ jobs:
             exit 1
           fi
 
-          echo "=== Checking PPtr fix in trace_pptr.rs ==="
-          if grep -q "FIX: PPtr points to pruned object" LSCR-package/rabex-env/src/trace_pptr.rs; then
-            echo "OK: trace_pptr.rs contains PPtr fix (null-out dangling refs)"
+          echo "=== Checking PPtr zero-fix in trace_pptr.rs ==="
+          if grep -q "FIX: PPtr points to pruned object" LSCR-package/rabex-env/src/trace_pptr.rs \
+             && grep -q "write_i32" LSCR-package/rabex-env/src/trace_pptr.rs \
+             && grep -q "write_i64" LSCR-package/rabex-env/src/trace_pptr.rs; then
+            echo "OK: trace_pptr.rs zeros dangling PPtrs (file_id=0, path_id=0)"
           else
-            echo "WARNING: trace_pptr.rs missing PPtr fix - may produce corrupted bundle"
+            echo "FATAL: trace_pptr.rs missing PPtr zero-fix!"
+            exit 1
+          fi
+
+          echo "=== Checking local rabex-env path dep ==="
+          if grep -q 'rabex-env = { path = "../rabex-env" }' LSCR-package/unity-scene-repacker/Cargo.toml; then
+            echo "OK: Cargo.toml uses local path rabex-env"
+          else
+            echo "FATAL: Cargo.toml is not using local path rabex-env!"
+            cat LSCR-package/unity-scene-repacker/Cargo.toml
+            exit 1
           fi
 
           echo "=== All source verifications passed ==="
@@ -109,7 +126,8 @@ jobs:
           if grep -q "FIX: PPtr points to pruned object" "$RABEX_SRC"; then
             echo "OK: FIX marker found in trace_pptr.rs"
           else
-            echo "WARNING: FIX marker not found - build will use unpatched rabex-env"
+            echo "FATAL: FIX marker not found - refusing to build unpatched rabex-env"
+            exit 1
           fi
           echo "File size: $(stat -c%s $RABEX_SRC) bytes"
           echo "File MD5: $(md5sum $RABEX_SRC | cut -d' ' -f1)"
@@ -296,5 +314,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libunityscenerepacker-armv7-v13
+          name: libunityscenerepacker-armv7-v14
           path: libunityscenerepacker.so
