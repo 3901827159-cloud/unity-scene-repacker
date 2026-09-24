@@ -137,6 +137,25 @@ jobs:
           cd LSCR-package/unity-scene-repacker
           cargo fetch
 
+      - name: Verify rabex-env resolves to local path dep
+        run: |
+          cd LSCR-package/unity-scene-repacker
+          cargo metadata --format-version 1 > /tmp/meta.json
+          python3 << 'PYEOF'
+          import json
+          meta = json.load(open('/tmp/meta.json'))
+          pkgs = [p for p in meta['packages'] if p['name'] == 'rabex-env']
+          print(f"rabex-env packages resolved: {len(pkgs)}")
+          for p in pkgs:
+              print(f"  manifest_path: {p['manifest_path']}")
+              print(f"  source: {p.get('source')}")
+          assert len(pkgs) == 1, f"expected exactly 1 rabex-env, got {len(pkgs)}"
+          assert 'LSCR-package/rabex-env' in pkgs[0]['manifest_path'], \
+              f"FATAL: rabex-env is NOT the local path dep: {pkgs[0]['manifest_path']}"
+          assert pkgs[0].get('source') is None, "FATAL: rabex-env resolved from a registry/git source!"
+          print("OK: rabex-env resolved to local LSCR-package/rabex-env")
+          PYEOF
+
       - name: Patch ALL for 32-bit ARM + Android platform fix
         run: |
           python3 << 'PYEOF'
