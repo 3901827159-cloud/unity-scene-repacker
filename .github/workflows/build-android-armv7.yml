@@ -1,4 +1,4 @@
-name: Build Android ARMv7 .so (v14 - PPtr Zero Fix)
+name: Build Android ARMv7 .so (v15 - MonoBehaviour Typetree Fix)
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/build-android-armv7.yml'
-      - 'LSCR-package-v7-pptr-zero-fix.zip'
+      - 'LSCR-package-v15-typetree-fix.zip'
 
 jobs:
   build-armv7:
@@ -16,19 +16,19 @@ jobs:
 
       - name: Verify source package exists
         run: |
-          if [ ! -f "LSCR-package-v7-pptr-zero-fix.zip" ]; then
-            echo "ERROR: LSCR-package-v7-pptr-zero-fix.zip not found in repository root!"
-            echo "Please upload LSCR-package-v7-pptr-zero-fix.zip to the repo root."
+          if [ ! -f "LSCR-package-v15-typetree-fix.zip" ]; then
+            echo "ERROR: LSCR-package-v15-typetree-fix.zip not found in repository root!"
+            echo "Please upload LSCR-package-v15-typetree-fix.zip to the repo root."
             ls -la *.zip 2>/dev/null || echo "No ZIP files found."
             exit 1
           fi
-          echo "OK: Found LSCR-package-v7-pptr-zero-fix.zip ($(stat -c%s LSCR-package-v7-pptr-zero-fix.zip) bytes)"
-          echo "MD5: $(md5sum LSCR-package-v7-pptr-zero-fix.zip | cut -d' ' -f1)"
+          echo "OK: Found LSCR-package-v15-typetree-fix.zip ($(stat -c%s LSCR-package-v15-typetree-fix.zip) bytes)"
+          echo "MD5: $(md5sum LSCR-package-v15-typetree-fix.zip | cut -d' ' -f1)"
 
       - name: Unzip source package
         run: |
           rm -rf LSCR-package
-          unzip -o "LSCR-package-v7-pptr-zero-fix.zip" -d .
+          unzip -o "LSCR-package-v15-typetree-fix.zip" -d .
           echo "ZIP extracted. Contents:"
           ls -la LSCR-package/
           echo "=== unity-scene-repacker/src/ ==="
@@ -61,12 +61,30 @@ jobs:
             exit 1
           fi
 
-          echo "=== Checking local rabex-env path dep ==="
-          if grep -q 'rabex-env = { path = "../rabex-env" }' LSCR-package/unity-scene-repacker/Cargo.toml; then
-            echo "OK: Cargo.toml uses local path rabex-env"
+          echo "=== Checking v15 dump-order fix in monobehaviour_typetree_export.rs ==="
+          if grep -q "FIX(v15): the dump file stores each node as (type, name" LSCR-package/unity-scene-repacker/src/monobehaviour_typetree_export.rs \
+             && grep -q "flat_nodes.push((ty, name, level, flags));" LSCR-package/unity-scene-repacker/src/monobehaviour_typetree_export.rs \
+             && grep -q "root m_Type is" LSCR-package/unity-scene-repacker/src/monobehaviour_typetree_export.rs; then
+            echo "OK: dump reader parses (type, name) with root-type validation"
           else
-            echo "FATAL: Cargo.toml is not using local path rabex-env!"
-            cat LSCR-package/unity-scene-repacker/Cargo.toml
+            echo "FATAL: monobehaviour_typetree_export.rs missing v15 dump-order fix!"
+            exit 1
+          fi
+
+          echo "=== Checking flatten order in batched_cache.rs ==="
+          if grep -q "node.m_Type.clone()," LSCR-package/unity-scene-repacker/src/batched_cache.rs \
+             && grep -q "This is the same order the monobehaviour-typetree-dump file uses" LSCR-package/unity-scene-repacker/src/batched_cache.rs; then
+            echo "OK: flatten_typetree_node pushes (type, name) matching reconstruct"
+          else
+            echo "FATAL: batched_cache.rs flatten order wrong!"
+            exit 1
+          fi
+
+          echo "=== Checking v15 build marker ==="
+          if grep -q "v15 typetree-fix build" LSCR-package/unity-scene-repacker/bindings/src/lib.rs; then
+            echo "OK: bindings marker is v15"
+          else
+            echo "FATAL: bindings marker is not v15!"
             exit 1
           fi
 
@@ -333,5 +351,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libunityscenerepacker-armv7-v14
+          name: libunityscenerepacker-armv7-v15
           path: libunityscenerepacker.so
