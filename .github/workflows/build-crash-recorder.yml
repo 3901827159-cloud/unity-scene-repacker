@@ -27,6 +27,7 @@ jobs:
               /reference:refs/Assembly-CSharp.dll \
               /reference:refs/UnityEngine.dll \
               /reference:refs/UnityEngine.CoreModule.dll \
+              /reference:refs/UnityEngine.AndroidJNIModule.dll \
               /out:CrashRecorder.dll \
               crsrc/CrashRecorder.cs
 
