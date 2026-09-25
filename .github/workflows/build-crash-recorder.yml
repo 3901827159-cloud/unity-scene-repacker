@@ -1,0 +1,37 @@
+name: Build Crash Recorder DLL
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip reference DLLs and source
+        run: |
+          unzip -o "HookModSource.zip" -d refs
+          unzip -o "CrashRecorderSource.zip" -d crsrc
+          ls -la crsrc
+
+      - name: Install Mono
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mono-mcs
+
+      - name: Compile Crash Recorder
+        run: |
+          mcs /target:library \
+              /reference:refs/Assembly-CSharp.dll \
+              /reference:refs/UnityEngine.dll \
+              /reference:refs/UnityEngine.CoreModule.dll \
+              /out:CrashRecorder.dll \
+              crsrc/CrashRecorder.cs
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrashRecorder
+          path: CrashRecorder.dll
